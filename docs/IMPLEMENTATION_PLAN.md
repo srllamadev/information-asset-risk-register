@@ -24,4 +24,10 @@ La metodología inicial usa máximo CIA y probabilidad × impacto (1–25), con 
 
 ## Estado y límites de esta entrega
 
-Se inicia la base de autenticación e inventario. No se considera un MVP terminado ni apto para producción: faltan, entre otros, protección distribuida ante intentos de acceso, cierre de sesión revocable, administración de usuarios, todas las funciones de riesgos, frontend, contenedores y auditoría completa. No desplegar hasta completar y revisar esas funciones. SQLite necesita almacenamiento local persistente; no usar un volumen de red sin validar y no escalar escritores sin controlar concurrencia.
+Se dispone de unidades organizacionales, inventario básico con retiro lógico y filtros, valoraciones CIA históricas, alta y consulta de amenazas y vulnerabilidades, escenarios y evaluaciones de riesgo históricas con metodología inicial fija. La metodología todavía no es configurable ni existe un flujo de aprobación. Las valoraciones y evaluaciones solo se agregan mediante la API; aún no hay controles de inmutabilidad frente a escritura directa en la base. No se considera un MVP terminado ni apto para producción: faltan, entre otros, protección ante intentos de acceso, cierre de sesión revocable, administración de usuarios, asignación y alcance por responsable, tratamientos, controles, reportes, frontend, contenedores y auditoría completa. No desplegar hasta completar y revisar esas funciones. SQLite necesita almacenamiento local persistente; no usar un volumen de red sin validar y no escalar escritores sin controlar concurrencia.
+
+## Verificación de esta fase
+
+- Migraciones 0001–0003 aplicadas a una base temporal; `alembic check` no detectó diferencias.
+- Dos pruebas de backend pasaron fuera del aislamiento; el portal de hilos de las pruebas se bloquea dentro de este entorno.
+- Sigue pendiente probar las migraciones inversas, concurrencia, frontend, Docker, persistencia entre reinicios y los flujos aún no implementados.
