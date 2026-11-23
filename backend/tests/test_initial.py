@@ -1,4 +1,6 @@
 import asyncio
+import csv
+import io
 import os
 os.environ['SAKURA_SECRET_KEY'] = 'test-only-secret-key-with-32-characters'
 os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
@@ -30,6 +32,10 @@ def test_asset_workflow():
     async def exercise():
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
             assert (await client.get('/api/v1/assets')).status_code == 403
+            for _ in range(5):
+                assert (await client.post('/api/v1/auth/login', json={'username':'desconocido','password':'incorrecta'})).status_code == 401
+            blocked = await client.post('/api/v1/auth/login', json={'username':'desconocido','password':'incorrecta'})
+            assert blocked.status_code == 429 and int(blocked.headers['Retry-After']) > 0
             assert (await client.post('/api/v1/auth/login', json={'username':'admin','password':'wrong'})).status_code == 401
             token = (await client.post('/api/v1/auth/login', json={'username':'admin','password':'test-password'})).json()['access_token']
             headers = {'Authorization': 'Bearer ' + token}
@@ -65,8 +71,54 @@ def test_asset_workflow():
             evaluation['residual_likelihood'] = 1
             assert (await client.post(f'/api/v1/risks/{risk_id}/assessments', json=evaluation, headers=headers)).status_code == 201
             assert len((await client.get(f'/api/v1/risks/{risk_id}/assessments', headers=headers)).json()) == 2
+            control = await client.post('/api/v1/controls', json={'code':'CTL-1', 'name':'Copias de seguridad'}, headers=headers)
+            assert control.status_code == 201
+            control_id = control.json()['id']
+            assert (await client.post('/api/v1/controls', json={'code':'CTL-1', 'name':'Duplicado'}, headers=headers)).status_code == 409
+            treatment = {'risk_id':risk_id, 'strategy':'mitigar', 'description':'Implantar respaldos', 'owner':'Tecnología', 'start_date':'2020-01-01', 'target_date':'2020-02-01', 'priority':'alta', 'status':'pendiente'}
+            created_treatment = await client.post('/api/v1/risk-treatments', json=treatment, headers=headers)
+            assert created_treatment.status_code == 201 and created_treatment.json()['overdue'] is True
+            treatment_id = created_treatment.json()['id']
+            assert (await client.post(f'/api/v1/risks/{risk_id}/controls', json={'control_id':control_id}, headers=headers)).status_code == 201
+            assert (await client.post(f'/api/v1/risks/{risk_id}/controls', json={'control_id':control_id}, headers=headers)).status_code == 409
+            assert (await client.post(f'/api/v1/risk-treatments/{treatment_id}/controls', json={'control_id':control_id}, headers=headers)).status_code == 201
+            assert len((await client.get(f'/api/v1/risk-treatments/{treatment_id}/controls', headers=headers)).json()) == 1
+            assert (await client.post('/api/v1/risk-treatments', json=treatment | {'strategy':'aceptar'}, headers=headers)).status_code == 422
+            accepted = treatment | {'strategy':'aceptar', 'acceptance_authority':'Dirección', 'acceptance_justification':'Riesgo asumido', 'acceptance_date':'2020-01-01', 'acceptance_review_date':'2021-01-01'}
+            assert (await client.post('/api/v1/risk-treatments', json=accepted, headers=headers)).status_code == 201
+            assert (await client.put(f'/api/v1/risk-treatments/{treatment_id}', json=treatment | {'status':'cerrado'}, headers=headers)).json()['overdue'] is False
+            assert len((await client.get(f'/api/v1/risks/{risk_id}/assessments', headers=headers)).json()) == 2
+            assert (await client.post('/api/v1/assets', json={'code':'A-2', 'name':'=1+1', 'description':'Coma, salto\nde línea'}, headers=headers)).status_code == 201
+            report = await client.get('/api/v1/reports/assets.csv', params={'separator':'punto_coma', 'q':'=1+1'}, headers=headers)
+            assert report.status_code == 200 and report.content.startswith(b'\xef\xbb\xbf')
+            rows = list(csv.reader(io.StringIO(report.content.decode('utf-8-sig')), delimiter=';'))
+            assert len(rows) == 2 and rows[1][2] == "'=1+1" and rows[1][3] == 'Coma, salto\nde línea'
+            risk_report = await client.get('/api/v1/reports/risks.csv', params={'asset_id':asset_id}, headers=headers)
+            assert risk_report.status_code == 200 and 'crítico' in risk_report.content.decode('utf-8-sig')
             token = (await client.post('/api/v1/auth/login', json={'username':'audit','password':'test-password'})).json()['access_token']
             assert (await client.post('/api/v1/assets', json=asset, headers={'Authorization':'Bearer '+token})).status_code == 403
+            assert (await client.post('/api/v1/controls', json={'code':'NO', 'name':'Denegado'}, headers={'Authorization':'Bearer '+token})).status_code == 403
+            audit = await client.get('/api/v1/audit-logs', headers={'Authorization':'Bearer '+token})
+            assert audit.status_code == 200
+            assert any(row['action'] == 'exportar' and row['entity'] == 'activos' for row in audit.json())
+            assert any(row['action'] == 'vincular_control' for row in audit.json())
+            assert (await client.get('/api/v1/users', headers={'Authorization':'Bearer '+token})).status_code == 403
+            created_user = await client.post('/api/v1/users', json={'username':'gestor1', 'password':'clave-larga-de-prueba', 'role':'gestor'}, headers=headers)
+            assert created_user.status_code == 201 and 'password_hash' not in created_user.json()
+            manager_token = (await client.post('/api/v1/auth/login', json={'username':'gestor1', 'password':'clave-larga-de-prueba'})).json()['access_token']
+            manager_headers = {'Authorization':'Bearer '+manager_token}
+            assert (await client.post('/api/v1/auth/change-password', json={'current_password':'incorrecta', 'new_password':'otra-clave-larga'}, headers=manager_headers)).status_code == 400
+            assert (await client.post('/api/v1/auth/change-password', json={'current_password':'clave-larga-de-prueba', 'new_password':'otra-clave-larga'}, headers=manager_headers)).status_code == 204
+            assert (await client.get('/api/v1/auth/me', headers=manager_headers)).status_code == 401
+            manager_token = (await client.post('/api/v1/auth/login', json={'username':'gestor1', 'password':'otra-clave-larga'})).json()['access_token']
+            manager_headers = {'Authorization':'Bearer '+manager_token}
+            assert (await client.post('/api/v1/auth/logout', headers=manager_headers)).status_code == 204
+            assert (await client.get('/api/v1/auth/me', headers=manager_headers)).status_code == 401
+            admin_id = (await client.get('/api/v1/auth/me', headers=headers)).json()['id']
+            assert (await client.put(f'/api/v1/users/{admin_id}', json={'role':'auditor','active':False}, headers=headers)).status_code == 409
+            manager_token = (await client.post('/api/v1/auth/login', json={'username':'gestor1', 'password':'otra-clave-larga'})).json()['access_token']
+            assert (await client.put(f"/api/v1/users/{created_user.json()['id']}", json={'role':'gestor','active':False}, headers=headers)).status_code == 200
+            assert (await client.get('/api/v1/auth/me', headers={'Authorization':'Bearer '+manager_token})).status_code == 401
             assert (await client.post(f'/api/v1/assets/{asset_id}/retire', headers=headers)).json()['status'] == 'retirado'
             assert (await client.post(f'/api/v1/assets/{asset_id}/assessments', json=values | {'availability':3}, headers=headers)).status_code == 409
     try:

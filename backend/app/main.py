@@ -1,4 +1,7 @@
 import os
+import hashlib
+import time
+import secrets
 from datetime import datetime, timedelta, timezone
 import jwt
 from argon2 import PasswordHasher
@@ -6,19 +9,21 @@ from argon2.exceptions import VerifyMismatchError, InvalidHashError
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .db import get_db
-from .models import Asset, AssetAssessment, AuditLog, OrganizationalUnit, RiskAssessment, RiskScenario, Threat, User, Vulnerability
+from .models import Asset, AssetAssessment, AuditLog, AuthSession, LoginAttempt, OrganizationalUnit, RiskAssessment, RiskScenario, Threat, User, Vulnerability
 
 # No fallback secret: startup must fail when configuration is incomplete.
 SECRET = os.environ.get("SAKURA_SECRET_KEY", "")
 if len(SECRET) < 32:
     raise RuntimeError("SAKURA_SECRET_KEY debe contener al menos 32 caracteres")
-app = FastAPI(title="Sakura Risk Manager", docs_url=None, redoc_url=None, openapi_url=None)
+docs_enabled = os.environ.get("SAKURA_ENABLE_DOCS") == "1"
+app = FastAPI(title="Sakura Risk Manager", docs_url="/docs" if docs_enabled else None, redoc_url=None, openapi_url="/openapi.json" if docs_enabled else None)
 bearer = HTTPBearer()
 hasher = PasswordHasher()
+DUMMY_HASH = hasher.hash(secrets.token_urlsafe(32))
 
 class Login(BaseModel):
     username: str = Field(min_length=1, max_length=100)
@@ -45,11 +50,12 @@ class AssetRead(AssetCreate, UTCResponse):
 
 def current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer), db: Session = Depends(get_db)):
     try:
-        payload = jwt.decode(credentials.credentials, SECRET, algorithms=["HS256"], options={"require": ["exp", "sub"]})
+        payload = jwt.decode(credentials.credentials, SECRET, algorithms=["HS256"], options={"require": ["exp", "sub", "jti"]})
         user = db.get(User, int(payload["sub"]))
+        session = db.get(AuthSession, payload["jti"])
     except (jwt.InvalidTokenError, ValueError, TypeError):
         raise HTTPException(401, "Sesión inválida")
-    if not user or not user.active:
+    if not user or not user.active or not session or session.revoked or session.user_id != user.id:
         raise HTTPException(401, "Sesión inválida")
     return user
 
@@ -59,17 +65,39 @@ def health():
 
 @app.post("/api/v1/auth/login")
 def login(data: Login, db: Session = Depends(get_db)):
+    # Serialize reservation of an attempt so simultaneous requests cannot bypass the limit.
+    attempt_key = hashlib.sha256(data.username.casefold().encode("utf-8")).hexdigest()
+    now = int(time.time())
+    db.execute(text("BEGIN IMMEDIATE"))
+    db.execute(delete(LoginAttempt).where(LoginAttempt.window_started <= now - 900))
+    attempt = db.get(LoginAttempt, attempt_key)
+    if attempt is None:
+        attempt = LoginAttempt(key=attempt_key, attempts=0, window_started=now)
+        db.add(attempt)
+    elif now - attempt.window_started >= 900:
+        attempt.attempts, attempt.window_started = 0, now
+    if attempt.attempts >= 5:
+        db.commit()
+        raise HTTPException(429, "Demasiados intentos; inténtelo más tarde", headers={"Retry-After": str(max(1, 900 - (now - attempt.window_started)))})
+    attempt.attempts += 1
+    db.commit()
     user = db.scalar(select(User).where(User.username == data.username))
     try:
-        valid = bool(user and hasher.verify(user.password_hash, data.password))
+        valid = hasher.verify(user.password_hash if user else DUMMY_HASH, data.password) and user is not None
     except (VerifyMismatchError, InvalidHashError):
         valid = False
     if not valid or not user.active:
         raise HTTPException(401, "Credenciales inválidas")
+    attempt = db.get(LoginAttempt, attempt_key)
+    if attempt is not None:
+        db.delete(attempt)
     user.last_login = datetime.now(timezone.utc)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    session_id = secrets.token_hex(32)
+    db.add(AuthSession(id=session_id, user_id=user.id, expires_at=expires_at))
     db.add(AuditLog(user_id=user.id, action="inicio_sesion", entity="usuario", entity_id=str(user.id)))
     db.commit()
-    token = jwt.encode({"sub": str(user.id), "exp": datetime.now(timezone.utc) + timedelta(minutes=15)}, SECRET, algorithm="HS256")
+    token = jwt.encode({"sub": str(user.id), "exp": expires_at, "jti": session_id}, SECRET, algorithm="HS256")
     return {"access_token": token, "token_type": "bearer", "expires_in": 900}
 
 @app.get("/api/v1/auth/me")
@@ -345,3 +373,28 @@ def list_risk_assessments(risk_id: int, user: User = Depends(current_user), db: 
         raise HTTPException(404, "Riesgo no encontrado")
     items = db.scalars(select(RiskAssessment).where(RiskAssessment.risk_id == risk_id).order_by(RiskAssessment.id.desc())).all()
     return [risk_assessment_read(item) for item in items]
+
+# Routes are registered after the shared authentication dependencies are defined.
+from .treatments import router as treatments_router
+app.include_router(treatments_router)
+from .reports import router as reports_router
+app.include_router(reports_router)
+
+class AuditRead(UTCResponse):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: int | None
+    action: str
+    entity: str
+    entity_id: str
+    created_at: datetime
+
+@app.get("/api/v1/audit-logs", response_model=list[AuditRead])
+def list_audit_logs(offset: int = 0, limit: int = 50, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {"administrador", "auditor"})
+    if offset < 0 or not 1 <= limit <= 100:
+        raise HTTPException(422, "Paginación inválida")
+    return db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).offset(offset).limit(limit)).all()
+
+from .users import router as users_router
+app.include_router(users_router)

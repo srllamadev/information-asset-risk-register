@@ -96,3 +96,58 @@ class RiskAssessment(Base):
     methodology: Mapped[str] = mapped_column(Text)
     assessor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class SecurityControl(Base):
+    __tablename__ = "security_controls"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(200), default="")
+    reference: Mapped[str] = mapped_column(String(200), default="")
+    control_type: Mapped[str] = mapped_column(String(100), default="")
+    implementation_status: Mapped[str] = mapped_column(String(100), default="")
+    owner: Mapped[str] = mapped_column(String(200), default="")
+    evidence: Mapped[str] = mapped_column(Text, default="")
+    review_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+class RiskTreatment(Base):
+    __tablename__ = "risk_treatments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    risk_id: Mapped[int] = mapped_column(ForeignKey("risk_scenarios.id", ondelete="RESTRICT"), index=True)
+    strategy: Mapped[str] = mapped_column(String(20))
+    description: Mapped[str] = mapped_column(Text)
+    owner: Mapped[str] = mapped_column(String(200))
+    start_date: Mapped[str] = mapped_column(String(10))
+    target_date: Mapped[str] = mapped_column(String(10))
+    priority: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))
+    evidence: Mapped[str] = mapped_column(Text, default="")
+    observations: Mapped[str] = mapped_column(Text, default="")
+    acceptance_authority: Mapped[str] = mapped_column(String(200), default="")
+    acceptance_justification: Mapped[str] = mapped_column(Text, default="")
+    acceptance_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    acceptance_review_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+class RiskControl(Base):
+    __tablename__ = "risk_controls"
+    risk_id: Mapped[int] = mapped_column(ForeignKey("risk_scenarios.id", ondelete="RESTRICT"), primary_key=True)
+    control_id: Mapped[int] = mapped_column(ForeignKey("security_controls.id", ondelete="RESTRICT"), primary_key=True)
+
+class TreatmentControl(Base):
+    __tablename__ = "treatment_controls"
+    treatment_id: Mapped[int] = mapped_column(ForeignKey("risk_treatments.id", ondelete="RESTRICT"), primary_key=True)
+    control_id: Mapped[int] = mapped_column(ForeignKey("security_controls.id", ondelete="RESTRICT"), primary_key=True)
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked: Mapped[bool] = mapped_column(default=False)
+
+class LoginAttempt(Base):
+    __tablename__ = "login_attempts"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    window_started: Mapped[int]

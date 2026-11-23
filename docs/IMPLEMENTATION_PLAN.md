@@ -24,10 +24,24 @@ La metodología inicial usa máximo CIA y probabilidad × impacto (1–25), con 
 
 ## Estado y límites de esta entrega
 
-Se dispone de unidades organizacionales, inventario básico con retiro lógico y filtros, valoraciones CIA históricas, alta y consulta de amenazas y vulnerabilidades, escenarios y evaluaciones de riesgo históricas con metodología inicial fija. La metodología todavía no es configurable ni existe un flujo de aprobación. Las valoraciones y evaluaciones solo se agregan mediante la API; aún no hay controles de inmutabilidad frente a escritura directa en la base. No se considera un MVP terminado ni apto para producción: faltan, entre otros, protección ante intentos de acceso, cierre de sesión revocable, administración de usuarios, asignación y alcance por responsable, tratamientos, controles, reportes, frontend, contenedores y auditoría completa. No desplegar hasta completar y revisar esas funciones. SQLite necesita almacenamiento local persistente; no usar un volumen de red sin validar y no escalar escritores sin controlar concurrencia.
+Se dispone de unidades organizacionales, inventario básico con retiro lógico y filtros, valoraciones CIA históricas, alta y consulta de amenazas y vulnerabilidades, escenarios y evaluaciones de riesgo históricas con metodología inicial fija. Se añadieron controles y tratamientos con vínculos múltiples, aceptación documentada, vencimiento calculado y exportaciones CSV iniciales de activos y riesgos. La metodología todavía no es configurable ni existe un flujo de aprobación. Las valoraciones y evaluaciones solo se agregan mediante la API; aún no hay controles de inmutabilidad frente a escritura directa en la base. No se considera un MVP terminado ni apto para producción: faltan, entre otros, protección ampliada contra ataques distribuidos, asignación y alcance por responsable, administración completa de tratamientos y controles, el resto de reportes, frontend, contenedores y auditoría completa. No desplegar hasta completar y revisar esas funciones. SQLite necesita almacenamiento local persistente; no usar un volumen de red sin validar y no escalar escritores sin controlar concurrencia.
 
 ## Verificación de esta fase
 
 - Migraciones 0001–0003 aplicadas a una base temporal; `alembic check` no detectó diferencias.
 - Dos pruebas de backend pasaron fuera del aislamiento; el portal de hilos de las pruebas se bloquea dentro de este entorno.
 - Sigue pendiente probar las migraciones inversas, concurrencia, frontend, Docker, persistencia entre reinicios y los flujos aún no implementados.
+
+## Avance de controles y tratamientos
+
+- Migración 0004: controles, tratamientos y asociaciones con riesgos. Alta, consulta y modificación con permisos y auditoría; las asociaciones tienen alta y consulta.
+- La aceptación registra autoridad, justificación y fechas, pero todavía no hay un proceso de aprobación independiente ni historial inmutable de sus modificaciones. Cerrar un tratamiento no actualiza evaluaciones.
+- Exportaciones autenticadas de activos y riesgos con BOM UTF-8, separador seleccionable, filtros disponibles y protección básica contra fórmulas; falta el resto de reportes y filtros.
+- Verificadas la migración 0004, su reversión y reaplicación en una base temporal, y pruebas de integración fuera del aislamiento. Siguen pendientes la administración completa, el control de concurrencia y la revisión de seguridad.
+
+## Avance de autenticación y usuarios
+
+- Migraciones 0005 y 0006: sesiones revocables y límite persistente de cinco intentos por nombre durante 15 minutos. Cerrar sesión, cambiar contraseña, desactivar o cambiar el rol revoca las sesiones correspondientes.
+- Administración de usuarios reservada a administradores; se protege la cuenta propia y se comprueba el último administrador activo bajo bloqueo de escritura SQLite.
+- Los roles responsable y consulta aún no tienen alcance de datos definido y permanecen sin acceso a datos por defecto. La limitación por nombre puede bloquear temporalmente a un usuario legítimo y no sustituye controles de red contra ataques distribuidos; se requiere revisión de seguridad adicional.
+- Las migraciones se verificaron en una base temporal, no se aplicaron a la base de la instancia local que ya estaba ejecutándose. Para aplicar cambios a esa instancia hay que detenerla, migrar y volver a iniciarla; las sesiones previas dejarán de ser válidas.
