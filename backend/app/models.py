@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text
+from datetime import date, datetime, timezone
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
@@ -23,7 +23,25 @@ class Asset(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(30), default="activo")
     unit_id: Mapped[int | None] = mapped_column(ForeignKey("organizational_units.id", ondelete="RESTRICT"), nullable=True, index=True)
+    asset_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    subcategory: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    process: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    custodian: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    responsible: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    classification: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    review_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    observations: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class AssetDependency(Base):
+    __tablename__ = "asset_dependencies"
+    __table_args__ = (CheckConstraint("asset_id != depends_on_id", name="ck_asset_dependency_not_self"),)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="RESTRICT"), primary_key=True)
+    depends_on_id: Mapped[int] = mapped_column(ForeignKey("assets.id", ondelete="RESTRICT"), primary_key=True)
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"

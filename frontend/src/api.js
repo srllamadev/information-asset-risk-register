@@ -8,3 +8,23 @@ export async function request(path, token, options = {}) {
   }
   return res.status === 204 ? null : res.json();
 }
+
+export async function download(path, token, filename) {
+  const res = await fetch('/api/v1' + path, {headers:{Authorization:`Bearer ${token}`}});
+  if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event('sakura:session-expired'));
+    let data; try { data = await res.json(); } catch { data = {}; }
+    throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudo generar el reporte.');
+  }
+  const url = URL.createObjectURL(await res.blob());
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}

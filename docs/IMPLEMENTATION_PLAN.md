@@ -24,7 +24,7 @@ La metodología inicial usa máximo CIA y probabilidad × impacto (1–25), con 
 
 ## Estado y límites de esta entrega
 
-Se dispone de unidades organizacionales, inventario básico con retiro lógico y filtros, valoraciones CIA históricas, alta y consulta de amenazas y vulnerabilidades, escenarios y evaluaciones de riesgo históricas con metodología inicial fija. Se añadieron controles y tratamientos con vínculos múltiples, aceptación documentada, vencimiento calculado y exportaciones CSV iniciales de activos y riesgos. La metodología todavía no es configurable ni existe un flujo de aprobación. Las valoraciones y evaluaciones solo se agregan mediante la API; aún no hay controles de inmutabilidad frente a escritura directa en la base. No se considera un MVP terminado ni apto para producción: faltan, entre otros, protección ampliada contra ataques distribuidos, asignación y alcance por responsable, administración completa de tratamientos y controles, el resto de reportes, pantallas y funcionalidades del frontend, validación de contenedores y auditoría completa. No desplegar hasta completar y revisar esas funciones. SQLite necesita almacenamiento local persistente; no usar un volumen de red sin validar y no escalar escritores sin controlar concurrencia.
+Se dispone de unidades organizacionales, inventario ampliado con retiro lógico, dependencias y filtros iniciales, valoraciones CIA históricas, alta y consulta de amenazas y vulnerabilidades, escenarios y evaluaciones de riesgo históricas con metodología inicial fija. Se añadieron controles y tratamientos con vínculos múltiples, aceptación documentada, vencimiento calculado y exportaciones CSV iniciales de activos y riesgos. La metodología todavía no es configurable ni existe un flujo de aprobación. Las valoraciones y evaluaciones solo se agregan mediante la API; aún no hay controles de inmutabilidad frente a escritura directa en la base. No se considera un MVP terminado ni apto para producción: faltan, entre otros, protección ampliada contra ataques distribuidos, asignación y alcance por responsable, administración completa de tratamientos y controles, el resto de reportes, pantallas y funcionalidades del frontend, validación de contenedores y auditoría completa. No desplegar hasta completar y revisar esas funciones. SQLite necesita almacenamiento local persistente; no usar un volumen de red sin validar y no escalar escritores sin controlar concurrencia.
 
 ## Verificación de esta fase
 
@@ -49,7 +49,7 @@ Se dispone de unidades organizacionales, inventario básico con retiro lógico y
 ## Avance del frontend
 
 - Interfaz React/Vite con Tailwind, React Router, TanStack Query y formularios conectados a inicio de sesión, unidades, activos, valoraciones CIA, amenazas, vulnerabilidades, escenarios y evaluaciones. Los datos proceden de la API y no se inventan estadísticas. El resumen muestra hasta 100 activos y riesgos.
-- Pendientes: gráficos, búsqueda y filtros completos, reportes, auditoría, perfil, gestión de usuarios, adaptación de permisos por ámbito, pruebas de navegación y accesibilidad y demás pantallas obligatorias.
+- Pendientes: gráficos, búsqueda y filtros completos, reportes adicionales, ampliación de auditoría, adaptación de permisos por ámbito, pruebas de navegación y accesibilidad y demás pantallas obligatorias.
 - `npm test` pasó dos pruebas de validación y `npm run build` compiló. Se comprobó que Vite responde y su proxy alcanza el backend. No se ha realizado verificación visual en navegador ni pruebas de flujos completos de interfaz.
 - La instancia local se migró a 0006 tras generar un respaldo SQLite previo; tokens antiguos se invalidaron.
 
@@ -64,3 +64,16 @@ Se dispone de unidades organizacionales, inventario básico con retiro lógico y
 - Se añadieron imágenes separadas, Compose, Nginx con proxy `/api/`, volumen SQLite, comprobaciones de salud y arranque con migraciones. La configuración expone únicamente Nginx en localhost por defecto; HTTPS necesita un proxy TLS institucional adicional.
 - Respaldo mediante la API de SQLite y restauración fuera de línea con verificación de integridad y esquema. Pruebas con bases temporales verificaron inclusión de datos en WAL, sustitución correcta y rechazo de archivo inválido sin alterar la base.
 - Cuatro pruebas backend pasaron; se validó la sintaxis shell y se parseó el YAML. Docker, Compose y Nginx no están disponibles en este entorno: quedan pendientes `docker compose config`, construcción, arranque, salud, red, permisos del volumen, restauración en contenedores y persistencia tras reinicio. No se ha probado el traslado sin conexión ni el proxy HTTPS.
+
+## Avance de administración y reportes
+
+- Se añadieron pantallas de usuarios y roles para administradores, cambio de contraseña, consulta de auditoría para administradores y auditores, y exportación autenticada de los CSV de activos y riesgos disponibles. Las modificaciones de rol o estado requieren confirmación y revocan las sesiones de la cuenta modificada.
+- Los roles responsable y consulta siguen sin tener ámbito de datos; no se concede acceso por defecto. Quedan pendientes el resto de reportes, filtros más amplios y detalle adicional en auditoría.
+- Pasaron cuatro pruebas de backend y ocho de frontend; la compilación pasó y se comprobó que frontend y API responden localmente. No se ha verificado el flujo visual con un navegador autenticado.
+
+## Avance del inventario institucional
+
+- Migración 0007 añade tipo, categoría, subcategoría, proceso, propietario, custodio, responsable, ubicación, clasificación, fecha de revisión, observaciones y última actualización. Los registros existentes se conservan; los nuevos campos son opcionales. La edición y el retiro lógico se encuentran disponibles desde el detalle del activo.
+- Dependencias dirigidas entre activos, con consulta, alta, eliminación del vínculo y auditoría. Se rechazan las dependencias a sí mismo, repetidas o nuevas asociaciones con activos retirados. No se eliminan los activos al retirar ni al desvincular.
+- Se incluyeron los campos adicionales en el CSV de activos. Las categorías sugeridas se muestran en el formulario, pero todavía falta un catálogo configurable y normalizado; proceso, propietarios y responsables son texto libre y aún no determinan permisos. Los estados en revisión e inactivo y los filtros avanzados siguen pendientes.
+- Cinco pruebas de backend y ocho de frontend pasaron, incluida la migración de un activo preexistente; compilación de React correcta. La base local se respaldó y migró a 0007. Todavía falta verificar el flujo visual autenticado y ampliar las pruebas de concurrencia.

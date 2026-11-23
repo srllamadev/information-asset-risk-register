@@ -37,10 +37,10 @@ def assets_report(separator: Literal["coma", "punto_coma"] = "coma", q: str = ""
     if status is not None:
         query = query.where(Asset.status == status)
     items = db.scalars(query).all()
-    rows = [(x.id, x.code, x.name, x.description, x.status, x.unit_id, x.created_at.isoformat() + ("+00:00" if x.created_at.tzinfo is None else "")) for x in items]
+    rows = [(x.id, x.code, x.name, x.description, x.status, x.unit_id, x.created_at.isoformat() + ("+00:00" if x.created_at.tzinfo is None else ""), x.asset_type, x.category, x.subcategory, x.process, x.owner, x.custodian, x.responsible, x.location, x.classification, x.review_date.isoformat() if x.review_date else "", x.observations) for x in items]
     db.add(AuditLog(user_id=user.id, action="exportar", entity="activos", entity_id=""))
     db.commit()
-    return export_csv(["ID", "Código", "Nombre", "Descripción", "Estado", "ID unidad", "Fecha de registro UTC"], rows, "," if separator == "coma" else ";")
+    return export_csv(["ID", "Código", "Nombre", "Descripción", "Estado", "ID unidad", "Fecha de registro UTC", "Tipo", "Categoría", "Subcategoría", "Proceso", "Propietario", "Custodio", "Responsable", "Ubicación", "Clasificación", "Fecha de revisión", "Observaciones"], rows, "," if separator == "coma" else ";")
 
 @router.get("/risks.csv")
 def risks_report(separator: Literal["coma", "punto_coma"] = "coma", asset_id: int | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):

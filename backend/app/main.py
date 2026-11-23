@@ -2,7 +2,7 @@ import os
 import hashlib
 import time
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .db import get_db
-from .models import Asset, AssetAssessment, AuditLog, AuthSession, LoginAttempt, OrganizationalUnit, RiskAssessment, RiskScenario, Threat, User, Vulnerability
+from .models import Asset, AssetDependency, AssetAssessment, AuditLog, AuthSession, LoginAttempt, OrganizationalUnit, RiskAssessment, RiskScenario, Threat, User, Vulnerability
 
 # No fallback secret: startup must fail when configuration is incomplete.
 SECRET = os.environ.get("SAKURA_SECRET_KEY", "")
@@ -34,6 +34,17 @@ class AssetCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=10000)
     unit_id: int | None = None
+    asset_type: str | None = Field(default=None, max_length=100)
+    category: str | None = Field(default=None, max_length=150)
+    subcategory: str | None = Field(default=None, max_length=150)
+    process: str | None = Field(default=None, max_length=200)
+    owner: str | None = Field(default=None, max_length=200)
+    custodian: str | None = Field(default=None, max_length=200)
+    responsible: str | None = Field(default=None, max_length=200)
+    location: str | None = Field(default=None, max_length=200)
+    classification: str | None = Field(default=None, max_length=100)
+    review_date: date | None = None
+    observations: str | None = Field(default=None, max_length=10000)
 
 class UTCResponse(BaseModel):
     @field_serializer("*", check_fields=False)
@@ -47,6 +58,7 @@ class AssetRead(AssetCreate, UTCResponse):
     id: int
     status: str
     created_at: datetime
+    updated_at: datetime | None
 
 def current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer), db: Session = Depends(get_db)):
     try:
@@ -401,3 +413,45 @@ app.include_router(users_router)
 
 from .matrix import router as matrix_router
 app.include_router(matrix_router)
+
+class DependencyInput(BaseModel):
+    depends_on_id: int = Field(gt=0)
+
+@app.get('/api/v1/assets/{asset_id}/dependencies', response_model=list[AssetRead])
+def list_asset_dependencies(asset_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {'administrador', 'gestor', 'auditor'})
+    if not db.get(Asset, asset_id):
+        raise HTTPException(404, 'Activo no encontrado')
+    return db.scalars(select(Asset).join(AssetDependency, AssetDependency.depends_on_id == Asset.id).where(AssetDependency.asset_id == asset_id).order_by(Asset.code)).all()
+
+@app.post('/api/v1/assets/{asset_id}/dependencies', status_code=201)
+def add_asset_dependency(asset_id: int, data: DependencyInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {'administrador', 'gestor'})
+    asset = db.get(Asset, asset_id)
+    target = db.get(Asset, data.depends_on_id)
+    if not asset or not target:
+        raise HTTPException(404, 'Activo no encontrado')
+    if asset.id == target.id:
+        raise HTTPException(422, 'Un activo no puede depender de sí mismo')
+    if asset.status == 'retirado' or target.status == 'retirado':
+        raise HTTPException(409, 'No se pueden vincular activos retirados')
+    if db.get(AssetDependency, (asset.id, target.id)):
+        raise HTTPException(409, 'La dependencia ya existe')
+    db.add(AssetDependency(asset_id=asset.id, depends_on_id=target.id))
+    db.add(AuditLog(user_id=user.id, action='vincular_dependencia', entity='activo', entity_id=str(asset.id)))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'No se pudo guardar la dependencia')
+    return {'asset_id': asset.id, 'depends_on_id': target.id}
+
+@app.delete('/api/v1/assets/{asset_id}/dependencies/{depends_on_id}', status_code=204)
+def remove_asset_dependency(asset_id: int, depends_on_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {'administrador', 'gestor'})
+    dependency = db.get(AssetDependency, (asset_id, depends_on_id))
+    if not dependency:
+        raise HTTPException(404, 'Dependencia no encontrada')
+    db.delete(dependency)
+    db.add(AuditLog(user_id=user.id, action='desvincular_dependencia', entity='activo', entity_id=str(asset_id)))
+    db.commit()

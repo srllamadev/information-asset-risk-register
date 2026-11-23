@@ -22,7 +22,7 @@ SQLite emplea WAL y claves foráneas; debe alojarse en almacenamiento local pers
 
 ## Interfaz en desarrollo
 
-Desde `frontend/`, instale las dependencias con `npm ci` y ejecute `npm run dev`. Abra `http://127.0.0.1:5173`; Vite dirige `/api` al backend en `127.0.0.1:8000`. Inicie primero el backend y cree el administrador con el procedimiento anterior. La interfaz incluye matriz de riesgos, controles y tratamientos además de los módulos iniciales, pero solo cubre una parte del sistema; revise el plan para los módulos pendientes. La sesión del navegador se mantiene en memoria y debe iniciarse nuevamente al recargar.
+Desde `frontend/`, instale las dependencias con `npm ci` y ejecute `npm run dev`. Abra `http://127.0.0.1:5173`; Vite dirige `/api` al backend en `127.0.0.1:8000`. Inicie primero el backend y cree el administrador con el procedimiento anterior. La interfaz incluye matriz de riesgos, controles, tratamientos, usuarios, perfil, auditoría y los reportes CSV iniciales además de los módulos iniciales, pero solo cubre una parte del sistema; revise el plan para los módulos pendientes. La sesión del navegador se mantiene en memoria y debe iniciarse nuevamente al recargar.
 
 ## Pruebas
 
@@ -92,3 +92,5 @@ docker save -o sakura-imagenes.tar sakura-risk-manager-backend:0.1.0 sakura-risk
 ```
 
 Transfiera los artefactos por un medio autorizado. En el servidor sin Internet, instale previamente Docker y Compose, cargue las imágenes con `docker load -i sakura-imagenes.tar`, configure un `.env` nuevo y ejecute `docker compose up -d --no-build`. Verifique integridad de los artefactos antes de transferirlos y compruebe que la arquitectura de las imágenes coincida con la del servidor. Para actualizar, cree un respaldo verificable, ensaye la actualización en un entorno aislado y conserve tanto las imágenes anteriores como el respaldo; las migraciones ocurren al iniciar.
+
+El inventario permite registrar los datos institucionales ampliados, editar y retirar activos, y asociar dependencias dirigidas. Las categorías sugeridas aún no son un catálogo administrable, y los responsables y procesos son texto libre: estos campos todavía no conceden permisos.

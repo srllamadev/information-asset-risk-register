@@ -41,13 +41,18 @@ def test_asset_workflow():
             headers = {'Authorization': 'Bearer ' + token}
             unit = await client.post('/api/v1/organizational-units', json={'name':'Tecnología'}, headers=headers)
             assert unit.status_code == 201
-            asset = {'code':'A-1','name':'Servidor','unit_id':unit.json()['id']}
+            asset = {'code':'A-1','name':'Servidor','unit_id':unit.json()['id'], 'asset_type':'Aplicación', 'category':'Software', 'owner':'Dirección', 'review_date':'2027-01-15'}
             created = await client.post('/api/v1/assets', json=asset, headers=headers)
             assert created.status_code == 201
             asset_id = created.json()['id']
+            assert created.json()['owner'] == 'Dirección' and created.json()['review_date'] == '2027-01-15'
+            modified = await client.put(f'/api/v1/assets/{asset_id}', json=asset | {'custodian':'Informática'}, headers=headers)
+            assert modified.status_code == 200 and modified.json()['custodian'] == 'Informática'
+            assert (await client.post(f'/api/v1/assets/{asset_id}/dependencies', json={'depends_on_id':asset_id}, headers=headers)).status_code == 422
             assert len((await client.get('/api/v1/assets', params={'q':'Servidor', 'unit_id':unit.json()['id']}, headers=headers)).json()) == 1
             assert (await client.get('/api/v1/assets', params={'q':'inexistente'}, headers=headers)).json() == []
             assert (await client.post('/api/v1/assets', json=asset, headers=headers)).status_code == 409
+            assert (await client.post('/api/v1/assets', json=asset | {'code':'FECHA', 'review_date':'no-es-fecha'}, headers=headers)).status_code == 422
             values = {'confidentiality':2, 'integrity':4, 'availability':5, 'confidentiality_reason':'Datos internos', 'integrity_reason':'Impacto alto', 'availability_reason':'Servicio crítico'}
             result = await client.post(f'/api/v1/assets/{asset_id}/assessments', json=values, headers=headers)
             assert result.status_code == 201 and result.json()['criticality'] == 5
@@ -93,7 +98,14 @@ def test_asset_workflow():
             assert (await client.post('/api/v1/risk-treatments', json=accepted, headers=headers)).status_code == 201
             assert (await client.put(f'/api/v1/risk-treatments/{treatment_id}', json=treatment | {'status':'cerrado'}, headers=headers)).json()['overdue'] is False
             assert len((await client.get(f'/api/v1/risks/{risk_id}/assessments', headers=headers)).json()) == 2
-            assert (await client.post('/api/v1/assets', json={'code':'A-2', 'name':'=1+1', 'description':'Coma, salto\nde línea'}, headers=headers)).status_code == 201
+            second = await client.post('/api/v1/assets', json={'code':'A-2', 'name':'=1+1', 'description':'Coma, salto\nde línea'}, headers=headers)
+            assert second.status_code == 201
+            second_id = second.json()['id']
+            assert (await client.post(f'/api/v1/assets/{asset_id}/dependencies', json={'depends_on_id':second_id}, headers=headers)).status_code == 201
+            assert (await client.post(f'/api/v1/assets/{asset_id}/dependencies', json={'depends_on_id':second_id}, headers=headers)).status_code == 409
+            assert (await client.get(f'/api/v1/assets/{asset_id}/dependencies', headers=headers)).json()[0]['id'] == second_id
+            assert (await client.delete(f'/api/v1/assets/{asset_id}/dependencies/{second_id}', headers=headers)).status_code == 204
+            assert (await client.get(f'/api/v1/assets/{asset_id}/dependencies', headers=headers)).json() == []
             report = await client.get('/api/v1/reports/assets.csv', params={'separator':'punto_coma', 'q':'=1+1'}, headers=headers)
             assert report.status_code == 200 and report.content.startswith(b'\xef\xbb\xbf')
             rows = list(csv.reader(io.StringIO(report.content.decode('utf-8-sig')), delimiter=';'))
@@ -102,6 +114,7 @@ def test_asset_workflow():
             assert risk_report.status_code == 200 and 'crítico' in risk_report.content.decode('utf-8-sig')
             token = (await client.post('/api/v1/auth/login', json={'username':'audit','password':'test-password'})).json()['access_token']
             assert (await client.post('/api/v1/assets', json=asset, headers={'Authorization':'Bearer '+token})).status_code == 403
+            assert (await client.post(f'/api/v1/assets/{asset_id}/dependencies', json={'depends_on_id':second_id}, headers={'Authorization':'Bearer '+token})).status_code == 403
             assert (await client.post('/api/v1/controls', json={'code':'NO', 'name':'Denegado'}, headers={'Authorization':'Bearer '+token})).status_code == 403
             audit = await client.get('/api/v1/audit-logs', headers={'Authorization':'Bearer '+token})
             assert audit.status_code == 200
@@ -112,6 +125,8 @@ def test_asset_workflow():
             assert created_user.status_code == 201 and 'password_hash' not in created_user.json()
             manager_token = (await client.post('/api/v1/auth/login', json={'username':'gestor1', 'password':'clave-larga-de-prueba'})).json()['access_token']
             manager_headers = {'Authorization':'Bearer '+manager_token}
+            assert (await client.get('/api/v1/audit-logs', headers=manager_headers)).status_code == 403
+            assert (await client.get('/api/v1/reports/assets.csv', headers=manager_headers)).status_code == 200
             assert (await client.post('/api/v1/auth/change-password', json={'current_password':'incorrecta', 'new_password':'otra-clave-larga'}, headers=manager_headers)).status_code == 400
             assert (await client.post('/api/v1/auth/change-password', json={'current_password':'clave-larga-de-prueba', 'new_password':'otra-clave-larga'}, headers=manager_headers)).status_code == 204
             assert (await client.get('/api/v1/auth/me', headers=manager_headers)).status_code == 401
