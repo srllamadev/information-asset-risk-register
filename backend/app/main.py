@@ -398,3 +398,6 @@ def list_audit_logs(offset: int = 0, limit: int = 50, user: User = Depends(curre
 
 from .users import router as users_router
 app.include_router(users_router)
+
+from .matrix import router as matrix_router
+app.include_router(matrix_router)

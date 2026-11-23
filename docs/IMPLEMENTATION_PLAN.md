@@ -49,6 +49,12 @@ Se dispone de unidades organizacionales, inventario básico con retiro lógico y
 ## Avance del frontend
 
 - Interfaz React/Vite con Tailwind, React Router, TanStack Query y formularios conectados a inicio de sesión, unidades, activos, valoraciones CIA, amenazas, vulnerabilidades, escenarios y evaluaciones. Los datos proceden de la API y no se inventan estadísticas. El resumen muestra hasta 100 activos y riesgos.
-- Pendientes: matriz, gráficos, búsqueda y filtros completos, formularios de tratamiento y controles, reportes, auditoría, perfil, gestión de usuarios, adaptación de permisos por ámbito, pruebas de navegación y accesibilidad y demás pantallas obligatorias.
+- Pendientes: gráficos, búsqueda y filtros completos, reportes, auditoría, perfil, gestión de usuarios, adaptación de permisos por ámbito, pruebas de navegación y accesibilidad y demás pantallas obligatorias.
 - `npm test` pasó dos pruebas de validación y `npm run build` compiló. Se comprobó que Vite responde y su proxy alcanza el backend. No se ha realizado verificación visual en navegador ni pruebas de flujos completos de interfaz.
 - La instancia local se migró a 0006 tras generar un respaldo SQLite previo; tokens antiguos se invalidaron.
+
+## Avance de matriz, controles y tratamientos
+
+- Matriz 5×5 con selección inherente/residual, filtros por unidad, activo, responsable y fecha, y detalle por celda. La API consulta la última evaluación de cada riesgo sin límite de primera página; riesgos sin evaluar se excluyen. El filtro de fecha se aplica a esa última evaluación y no selecciona una evaluación anterior. Los niveles siguen la metodología inicial fija y no existe aprobación formal de evaluaciones.
+- Pantallas conectadas para crear y editar controles y tratamientos, documentar aceptación y asociar controles con riesgos o tratamientos. No se han implementado desvinculación, referencias normativas verificadas ni historial inmutable de cambios.
+- Pasaron dos pruebas de backend y cuatro de frontend; compilación React correcta. Se verificó que el endpoint de matriz exige autenticación. No se realizó revisión visual ni prueba de navegador con usuario autenticado.

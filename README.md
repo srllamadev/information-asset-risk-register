@@ -22,7 +22,7 @@ SQLite emplea WAL y claves foráneas; debe alojarse en almacenamiento local pers
 
 ## Interfaz en desarrollo
 
-Desde `frontend/`, instale las dependencias con `npm ci` y ejecute `npm run dev`. Abra `http://127.0.0.1:5173`; Vite dirige `/api` al backend en `127.0.0.1:8000`. Inicie primero el backend y cree el administrador con el procedimiento anterior. La interfaz incluye únicamente una parte del sistema; revise el plan para los módulos pendientes. La sesión del navegador se mantiene en memoria y debe iniciarse nuevamente al recargar.
+Desde `frontend/`, instale las dependencias con `npm ci` y ejecute `npm run dev`. Abra `http://127.0.0.1:5173`; Vite dirige `/api` al backend en `127.0.0.1:8000`. Inicie primero el backend y cree el administrador con el procedimiento anterior. La interfaz incluye matriz de riesgos, controles y tratamientos además de los módulos iniciales, pero solo cubre una parte del sistema; revise el plan para los módulos pendientes. La sesión del navegador se mantiene en memoria y debe iniciarse nuevamente al recargar.
 
 ## Pruebas
 

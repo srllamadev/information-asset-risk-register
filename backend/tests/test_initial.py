@@ -71,6 +71,11 @@ def test_asset_workflow():
             evaluation['residual_likelihood'] = 1
             assert (await client.post(f'/api/v1/risks/{risk_id}/assessments', json=evaluation, headers=headers)).status_code == 201
             assert len((await client.get(f'/api/v1/risks/{risk_id}/assessments', headers=headers)).json()) == 2
+            matrix = await client.get('/api/v1/risk-matrix', params={'unit_id':unit.json()['id']}, headers=headers)
+            assert matrix.status_code == 200 and len(matrix.json()) == 1
+            assert matrix.json()[0]['residual_likelihood'] == 1
+            assert (await client.get('/api/v1/risk-matrix', params={'unit_id':999}, headers=headers)).json() == []
+            assert (await client.get('/api/v1/risk-matrix', params={'date_from':'2025-01-01', 'date_to':'2024-01-01'}, headers=headers)).status_code == 422
             control = await client.post('/api/v1/controls', json={'code':'CTL-1', 'name':'Copias de seguridad'}, headers=headers)
             assert control.status_code == 201
             control_id = control.json()['id']
