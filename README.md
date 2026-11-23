@@ -20,6 +20,10 @@ El administrador se crea de forma interactiva después de migrar. Conserve la cl
 
 SQLite emplea WAL y claves foráneas; debe alojarse en almacenamiento local persistente. La concurrencia de escrituras es limitada. Los procedimientos de Docker, HTTPS, respaldos y restauración aún están pendientes.
 
+## Interfaz en desarrollo
+
+Desde `frontend/`, instale las dependencias con `npm ci` y ejecute `npm run dev`. Abra `http://127.0.0.1:5173`; Vite dirige `/api` al backend en `127.0.0.1:8000`. Inicie primero el backend y cree el administrador con el procedimiento anterior. La interfaz incluye únicamente una parte del sistema; revise el plan para los módulos pendientes. La sesión del navegador se mantiene en memoria y debe iniciarse nuevamente al recargar.
+
 ## Pruebas
 
 Desde `backend/`, con el entorno virtual activado, ejecute `pytest -q`. Las pruebas usan una base independiente en memoria. En el entorno de desarrollo utilizado, el aislamiento bloqueó el mecanismo de hilos de las pruebas; la ejecución fuera del aislamiento pasó.
@@ -27,3 +31,5 @@ Desde `backend/`, con el entorno virtual activado, ejecute `pytest -q`. Las prue
 Los controles se vinculan con riesgos o tratamientos. El vencimiento de un tratamiento se calcula según su fecha objetivo y estado; cerrar un plan no cambia la evaluación residual. La aceptación registrada todavía no cuenta con flujo independiente de aprobación ni historial inmutable. Las exportaciones CSV admiten `separator=coma` o `separator=punto_coma` y se registran en auditoría.
 
 La protección inicial permite cinco intentos por nombre en una ventana de 15 minutos. Una cuenta puede quedar bloqueada temporalmente por intentos de terceros; hacen falta controles adicionales contra ataques distribuidos. Los roles responsable y consulta no tienen todavía alcance de datos configurado. La documentación interactiva puede habilitarse solo para desarrollo local mediante `SAKURA_ENABLE_DOCS=1`; permanece deshabilitada por defecto.
+
+En `frontend/`, `npm test` ejecuta las pruebas disponibles y `npm run build` genera la compilación. Las pruebas actuales no cubren todavía la navegación ni los flujos de usuario en navegador.
