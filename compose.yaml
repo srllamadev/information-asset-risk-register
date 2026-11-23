@@ -1,0 +1,49 @@
+services:
+  backend:
+    image: sakura-risk-manager-backend:0.1.0
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: sqlite:////data/sakura.db
+      SAKURA_SECRET_KEY: ${SAKURA_SECRET_KEY:?Configure SAKURA_SECRET_KEY en .env}
+    volumes:
+      - sakura_data:/data
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  frontend:
+    image: sakura-risk-manager-frontend:0.1.0
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  sakura_data:
