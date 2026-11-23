@@ -93,4 +93,6 @@ docker save -o sakura-imagenes.tar sakura-risk-manager-backend:0.1.0 sakura-risk
 
 Transfiera los artefactos por un medio autorizado. En el servidor sin Internet, instale previamente Docker y Compose, cargue las imágenes con `docker load -i sakura-imagenes.tar`, configure un `.env` nuevo y ejecute `docker compose up -d --no-build`. Verifique integridad de los artefactos antes de transferirlos y compruebe que la arquitectura de las imágenes coincida con la del servidor. Para actualizar, cree un respaldo verificable, ensaye la actualización en un entorno aislado y conserve tanto las imágenes anteriores como el respaldo; las migraciones ocurren al iniciar.
 
-El inventario permite registrar los datos institucionales ampliados, editar y retirar activos, y asociar dependencias dirigidas. Las categorías sugeridas aún no son un catálogo administrable, y los responsables y procesos son texto libre: estos campos todavía no conceden permisos.
+El inventario permite registrar los datos institucionales ampliados, editar y retirar activos, y asociar dependencias dirigidas. Las categorías se administran desde el catálogo y los responsables y procesos son texto libre: estos campos todavía no conceden permisos.
+
+Las categorías de activos se crean explícitamente desde la sección «Categorías de activos» con una cuenta administradora. Los activos existentes conservaron sus categorías durante la migración. Es posible filtrar inventario y CSV por categoría, unidad y estado; el retiro de un activo es lógico.

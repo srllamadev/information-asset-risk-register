@@ -75,5 +75,12 @@ Se dispone de unidades organizacionales, inventario ampliado con retiro lógico,
 
 - Migración 0007 añade tipo, categoría, subcategoría, proceso, propietario, custodio, responsable, ubicación, clasificación, fecha de revisión, observaciones y última actualización. Los registros existentes se conservan; los nuevos campos son opcionales. La edición y el retiro lógico se encuentran disponibles desde el detalle del activo.
 - Dependencias dirigidas entre activos, con consulta, alta, eliminación del vínculo y auditoría. Se rechazan las dependencias a sí mismo, repetidas o nuevas asociaciones con activos retirados. No se eliminan los activos al retirar ni al desvincular.
-- Se incluyeron los campos adicionales en el CSV de activos. Las categorías sugeridas se muestran en el formulario, pero todavía falta un catálogo configurable y normalizado; proceso, propietarios y responsables son texto libre y aún no determinan permisos. Los estados en revisión e inactivo y los filtros avanzados siguen pendientes.
+- Se incluyeron los campos adicionales en el CSV de activos. En esa fase las categorías eran texto libre y los estados en revisión e inactivo estaban pendientes; ver el avance de categorías posterior. Los procesos, propietarios y responsables siguen siendo texto libre y no determinan permisos.
 - Cinco pruebas de backend y ocho de frontend pasaron, incluida la migración de un activo preexistente; compilación de React correcta. La base local se respaldó y migró a 0007. Todavía falta verificar el flujo visual autenticado y ampliar las pruebas de concurrencia.
+
+## Avance de categorías, estados y filtros
+
+- Migración 0008 crea el catálogo e incorpora las categorías ya utilizadas sin insertar datos de demostración. Los administradores pueden crear, cambiar de nombre o desactivar categorías; el cambio de nombre actualiza los activos asociados y se audita. Las categorías inactivas se conservan en activos existentes, pero no pueden asignarse a nuevos activos.
+- Estados activo, en revisión e inactivo disponibles desde el detalle; el retiro lógico sigue siendo una operación independiente. Filtros por unidad, categoría, estado y búsqueda disponibles en inventario y exportación CSV.
+- La categoría se conserva en el activo como texto compatible con registros anteriores; queda pendiente normalizarla mediante una clave foránea y completar los demás catálogos. Propietarios y responsables aún no determinan permisos.
+- Migración 0008 verificada con datos anteriores y aplicada a la base local tras un respaldo. Cinco pruebas backend y ocho frontend pasaron; compilación correcta. No se ha realizado una prueba visual autenticada completa.

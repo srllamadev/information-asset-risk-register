@@ -169,3 +169,9 @@ class LoginAttempt(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     attempts: Mapped[int] = mapped_column(default=0)
     window_started: Mapped[int]
+
+class AssetCategory(Base):
+    __tablename__ = "asset_categories"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), unique=True, index=True)
+    active: Mapped[bool] = mapped_column(default=True)

@@ -27,7 +27,7 @@ def export_csv(header, rows, delimiter):
     return Response(content=stream.getvalue().encode("utf-8-sig"), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="reporte.csv"', "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 @router.get("/assets.csv")
-def assets_report(separator: Literal["coma", "punto_coma"] = "coma", q: str = "", unit_id: int | None = None, status: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def assets_report(separator: Literal["coma", "punto_coma"] = "coma", q: str = "", unit_id: int | None = None, status: str | None = None, category: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
     require_role(user, {"administrador", "gestor", "auditor"})
     query = select(Asset).order_by(Asset.id)
     if q:
@@ -36,6 +36,8 @@ def assets_report(separator: Literal["coma", "punto_coma"] = "coma", q: str = ""
         query = query.where(Asset.unit_id == unit_id)
     if status is not None:
         query = query.where(Asset.status == status)
+    if category:
+        query = query.where(Asset.category == category)
     items = db.scalars(query).all()
     rows = [(x.id, x.code, x.name, x.description, x.status, x.unit_id, x.created_at.isoformat() + ("+00:00" if x.created_at.tzinfo is None else ""), x.asset_type, x.category, x.subcategory, x.process, x.owner, x.custodian, x.responsible, x.location, x.classification, x.review_date.isoformat() if x.review_date else "", x.observations) for x in items]
     db.add(AuditLog(user_id=user.id, action="exportar", entity="activos", entity_id=""))

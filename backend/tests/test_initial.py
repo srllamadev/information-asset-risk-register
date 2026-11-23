@@ -41,10 +41,13 @@ def test_asset_workflow():
             headers = {'Authorization': 'Bearer ' + token}
             unit = await client.post('/api/v1/organizational-units', json={'name':'Tecnología'}, headers=headers)
             assert unit.status_code == 201
+            category = await client.post('/api/v1/asset-categories', json={'name':'Software'}, headers=headers)
+            assert category.status_code == 201
             asset = {'code':'A-1','name':'Servidor','unit_id':unit.json()['id'], 'asset_type':'Aplicación', 'category':'Software', 'owner':'Dirección', 'review_date':'2027-01-15'}
             created = await client.post('/api/v1/assets', json=asset, headers=headers)
             assert created.status_code == 201
             asset_id = created.json()['id']
+            assert (await client.post('/api/v1/assets', json=asset | {'code':'CAT-INVALIDA', 'category':'Sin catálogo'}, headers=headers)).status_code == 422
             assert created.json()['owner'] == 'Dirección' and created.json()['review_date'] == '2027-01-15'
             modified = await client.put(f'/api/v1/assets/{asset_id}', json=asset | {'custodian':'Informática'}, headers=headers)
             assert modified.status_code == 200 and modified.json()['custodian'] == 'Informática'
@@ -52,6 +55,10 @@ def test_asset_workflow():
             assert len((await client.get('/api/v1/assets', params={'q':'Servidor', 'unit_id':unit.json()['id']}, headers=headers)).json()) == 1
             assert (await client.get('/api/v1/assets', params={'q':'inexistente'}, headers=headers)).json() == []
             assert (await client.post('/api/v1/assets', json=asset, headers=headers)).status_code == 409
+            assert (await client.put(f'/api/v1/assets/{asset_id}/status', json={'status':'en_revision'}, headers=headers)).json()['status'] == 'en_revision'
+            assert len((await client.get('/api/v1/assets', params={'category':'Software', 'status':'en_revision'}, headers=headers)).json()) == 1
+            assert (await client.put(f'/api/v1/assets/{asset_id}/status', json={'status':'activo'}, headers=headers)).status_code == 200
+            assert (await client.put(f'/api/v1/assets/{asset_id}/status', json={'status':'desconocido'}, headers=headers)).status_code == 422
             assert (await client.post('/api/v1/assets', json=asset | {'code':'FECHA', 'review_date':'no-es-fecha'}, headers=headers)).status_code == 422
             values = {'confidentiality':2, 'integrity':4, 'availability':5, 'confidentiality_reason':'Datos internos', 'integrity_reason':'Impacto alto', 'availability_reason':'Servicio crítico'}
             result = await client.post(f'/api/v1/assets/{asset_id}/assessments', json=values, headers=headers)
@@ -98,6 +105,13 @@ def test_asset_workflow():
             assert (await client.post('/api/v1/risk-treatments', json=accepted, headers=headers)).status_code == 201
             assert (await client.put(f'/api/v1/risk-treatments/{treatment_id}', json=treatment | {'status':'cerrado'}, headers=headers)).json()['overdue'] is False
             assert len((await client.get(f'/api/v1/risks/{risk_id}/assessments', headers=headers)).json()) == 2
+            renamed = await client.put(f"/api/v1/asset-categories/{category.json()['id']}", json={'name':'Software institucional', 'active':False}, headers=headers)
+            assert renamed.status_code == 200
+            assert (await client.get(f'/api/v1/assets/{asset_id}', headers=headers)).json()['category'] == 'Software institucional'
+            assert (await client.post('/api/v1/assets', json={'code':'NO', 'name':'Sin permiso', 'category':'Software institucional'}, headers=headers)).status_code == 422
+            assert (await client.put(f'/api/v1/assets/{asset_id}', json=asset | {'category':'Software institucional'}, headers=headers)).status_code == 200
+            filtered = await client.get('/api/v1/reports/assets.csv', params={'category':'Software institucional'}, headers=headers)
+            assert len(list(csv.reader(io.StringIO(filtered.content.decode('utf-8-sig'))))) == 2
             second = await client.post('/api/v1/assets', json={'code':'A-2', 'name':'=1+1', 'description':'Coma, salto\nde línea'}, headers=headers)
             assert second.status_code == 201
             second_id = second.json()['id']
@@ -116,6 +130,8 @@ def test_asset_workflow():
             assert (await client.post('/api/v1/assets', json=asset, headers={'Authorization':'Bearer '+token})).status_code == 403
             assert (await client.post(f'/api/v1/assets/{asset_id}/dependencies', json={'depends_on_id':second_id}, headers={'Authorization':'Bearer '+token})).status_code == 403
             assert (await client.post('/api/v1/controls', json={'code':'NO', 'name':'Denegado'}, headers={'Authorization':'Bearer '+token})).status_code == 403
+            assert (await client.post('/api/v1/asset-categories', json={'name':'Denegado'}, headers={'Authorization':'Bearer '+token})).status_code == 403
+            assert (await client.put(f'/api/v1/assets/{asset_id}/status', json={'status':'inactivo'}, headers={'Authorization':'Bearer '+token})).status_code == 403
             audit = await client.get('/api/v1/audit-logs', headers={'Authorization':'Bearer '+token})
             assert audit.status_code == 200
             assert any(row['action'] == 'exportar' and row['entity'] == 'activos' for row in audit.json())
@@ -140,6 +156,7 @@ def test_asset_workflow():
             assert (await client.put(f"/api/v1/users/{created_user.json()['id']}", json={'role':'gestor','active':False}, headers=headers)).status_code == 200
             assert (await client.get('/api/v1/auth/me', headers={'Authorization':'Bearer '+manager_token})).status_code == 401
             assert (await client.post(f'/api/v1/assets/{asset_id}/retire', headers=headers)).json()['status'] == 'retirado'
+            assert (await client.put(f'/api/v1/assets/{asset_id}/status', json={'status':'activo'}, headers=headers)).status_code == 409
             assert (await client.post(f'/api/v1/assets/{asset_id}/assessments', json=values | {'availability':3}, headers=headers)).status_code == 409
     try:
         asyncio.run(exercise())

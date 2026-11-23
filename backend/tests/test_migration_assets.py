@@ -14,9 +14,13 @@ def test_upgrade_preserves_existing_assets(tmp_path):
     migrate('0006')
     with sqlite3.connect(database) as db:
         db.execute("INSERT INTO assets (code, name, description, status, created_at) VALUES ('LEG-1', 'Existente', 'Datos previos', 'activo', '2025-01-01 00:00:00')")
+    migrate('0007')
+    with sqlite3.connect(database) as db:
+        db.execute("UPDATE assets SET category = 'Software previo' WHERE code = 'LEG-1'")
     migrate('head')
     with sqlite3.connect(database) as db:
         row=db.execute('SELECT code, name, description, updated_at, category FROM assets').fetchone()
         assert row[:3] == ('LEG-1', 'Existente', 'Datos previos')
-        assert row[3].startswith('2025-01-01') and row[4] is None
-        assert db.execute('SELECT version_num FROM alembic_version').fetchone() == ('0007',)
+        assert row[3].startswith('2025-01-01') and row[4] == 'Software previo'
+        assert db.execute('SELECT version_num FROM alembic_version').fetchone() == ('0008',)
+        assert db.execute('SELECT name, active FROM asset_categories').fetchall() == [('Software previo', 1)]

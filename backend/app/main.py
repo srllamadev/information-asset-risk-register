@@ -3,17 +3,18 @@ import hashlib
 import time
 import secrets
 from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from .db import get_db
-from .models import Asset, AssetDependency, AssetAssessment, AuditLog, AuthSession, LoginAttempt, OrganizationalUnit, RiskAssessment, RiskScenario, Threat, User, Vulnerability
+from .models import Asset, AssetCategory, AssetDependency, AssetAssessment, AuditLog, AuthSession, LoginAttempt, OrganizationalUnit, RiskAssessment, RiskScenario, Threat, User, Vulnerability
 
 # No fallback secret: startup must fail when configuration is incomplete.
 SECRET = os.environ.get("SAKURA_SECRET_KEY", "")
@@ -117,7 +118,7 @@ def me(user: User = Depends(current_user)):
     return {"id": user.id, "username": user.username, "role": user.role}
 
 @app.get("/api/v1/assets", response_model=list[AssetRead])
-def list_assets(offset: int = 0, limit: int = 50, q: str = "", unit_id: int | None = None, status: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def list_assets(offset: int = 0, limit: int = 50, q: str = "", unit_id: int | None = None, status: str | None = None, category: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
     if user.role not in {"administrador", "gestor", "auditor"}:
         raise HTTPException(403, "Acceso denegado")
     if offset < 0 or not 1 <= limit <= 100:
@@ -129,7 +130,19 @@ def list_assets(offset: int = 0, limit: int = 50, q: str = "", unit_id: int | No
         query = query.where(Asset.unit_id == unit_id)
     if status is not None:
         query = query.where(Asset.status == status)
+    if category:
+        query = query.where(Asset.category == category)
     return db.scalars(query.order_by(Asset.id).offset(offset).limit(limit)).all()
+
+def validated_asset_category(category: str | None, db: Session, previous: str | None = None) -> str | None:
+    if category and category == previous:
+        return previous
+    name = category.strip() if category else None
+    if name and name != previous:
+        item = db.scalar(select(AssetCategory).where(AssetCategory.name == name, AssetCategory.active.is_(True)))
+        if item is None:
+            raise HTTPException(422, "Selecciona una categoría activa del catálogo")
+    return name
 
 @app.post("/api/v1/assets", response_model=AssetRead, status_code=201)
 def create_asset(data: AssetCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -137,7 +150,9 @@ def create_asset(data: AssetCreate, user: User = Depends(current_user), db: Sess
         raise HTTPException(403, "Acceso denegado")
     if data.unit_id is not None and not db.get(OrganizationalUnit, data.unit_id):
         raise HTTPException(422, "Unidad organizacional inexistente")
-    asset = Asset(**data.model_dump())
+    values = data.model_dump()
+    values["category"] = validated_asset_category(data.category, db)
+    asset = Asset(**values)
     db.add(asset)
     try:
         db.flush()
@@ -215,7 +230,9 @@ def update_asset(asset_id: int, data: AssetCreate, user: User = Depends(current_
         raise HTTPException(409, "El activo está retirado")
     if data.unit_id is not None and not db.get(OrganizationalUnit, data.unit_id):
         raise HTTPException(422, "Unidad organizacional inexistente")
-    for key, value in data.model_dump().items():
+    values = data.model_dump()
+    values["category"] = validated_asset_category(data.category, db, asset.category)
+    for key, value in values.items():
         setattr(asset, key, value)
     try:
         db.add(AuditLog(user_id=user.id, action="modificar", entity="activo", entity_id=str(asset.id)))
@@ -455,3 +472,74 @@ def remove_asset_dependency(asset_id: int, depends_on_id: int, user: User = Depe
     db.delete(dependency)
     db.add(AuditLog(user_id=user.id, action='desvincular_dependencia', entity='activo', entity_id=str(asset_id)))
     db.commit()
+
+class AssetStatusInput(BaseModel):
+    status: Literal['activo', 'en_revision', 'inactivo']
+
+@app.put('/api/v1/assets/{asset_id}/status', response_model=AssetRead)
+def change_asset_status(asset_id: int, data: AssetStatusInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {'administrador', 'gestor'})
+    asset = db.get(Asset, asset_id)
+    if not asset:
+        raise HTTPException(404, 'Activo no encontrado')
+    if asset.status == 'retirado':
+        raise HTTPException(409, 'No se puede cambiar el estado de un activo retirado')
+    if asset.status != data.status:
+        asset.status = data.status
+        db.add(AuditLog(user_id=user.id, action='cambiar_estado', entity='activo', entity_id=str(asset.id)))
+        db.commit()
+    return asset
+
+class AssetCategoryInput(BaseModel):
+    name: str = Field(min_length=1, max_length=150, pattern=r'.*\S.*')
+    active: bool = True
+
+class AssetCategoryRead(AssetCategoryInput):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+
+@app.get('/api/v1/asset-categories', response_model=list[AssetCategoryRead])
+def list_asset_categories(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {'administrador', 'gestor', 'auditor'})
+    return db.scalars(select(AssetCategory).order_by(AssetCategory.name)).all()
+
+@app.post('/api/v1/asset-categories', response_model=AssetCategoryRead, status_code=201)
+def create_asset_category(data: AssetCategoryInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {'administrador'})
+    item = AssetCategory(name=data.name.strip(), active=data.active)
+    db.add(item)
+    try:
+        db.flush()
+        db.add(AuditLog(user_id=user.id, action='crear', entity='categoria_activo', entity_id=str(item.id)))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'La categoría ya existe')
+    return item
+
+@app.put('/api/v1/asset-categories/{category_id}', response_model=AssetCategoryRead)
+def update_asset_category(category_id: int, data: AssetCategoryInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {'administrador'})
+    db.execute(text('BEGIN IMMEDIATE'))
+    db.refresh(user)
+    require_role(user, {'administrador'})
+    if not user.active:
+        raise HTTPException(403, 'Acceso denegado')
+    item = db.get(AssetCategory, category_id)
+    if not item:
+        raise HTTPException(404, 'Categoría no encontrada')
+    name = data.name.strip()
+    if item.name == name and item.active == data.active:
+        return item
+    previous = item.name
+    item.name, item.active = name, data.active
+    try:
+        db.flush()
+        if previous != name:
+            db.execute(update(Asset).where(Asset.category == previous).values(category=name, updated_at=datetime.now(timezone.utc)))
+        db.add(AuditLog(user_id=user.id, action='modificar', entity='categoria_activo', entity_id=str(item.id)))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'La categoría ya existe')
+    return item
