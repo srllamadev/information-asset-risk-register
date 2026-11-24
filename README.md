@@ -96,3 +96,11 @@ Transfiera los artefactos por un medio autorizado. En el servidor sin Internet, 
 El inventario permite registrar los datos institucionales ampliados, editar y retirar activos, y asociar dependencias dirigidas. Las categorías se administran desde el catálogo y los responsables y procesos son texto libre: estos campos todavía no conceden permisos.
 
 Las categorías de activos se crean explícitamente desde la sección «Categorías de activos» con una cuenta administradora. Los activos existentes conservaron sus categorías durante la migración. Es posible filtrar inventario y CSV por categoría, unidad y estado; el retiro de un activo es lógico.
+
+## Importar el libro de ejemplo
+
+Entra con una cuenta administradora y abre **Importar Excel**. Selecciona un archivo `.xlsx` de hasta 5 MB con la estructura exacta de las hojas `Inventario`, `Riesgos` y `Controles` del libro de ejemplo. La vista previa comprueba encabezados, identificadores, referencias y valores; muestra errores y posibles duplicados sin guardar datos. La importación solo se realiza al pulsar **Confirmar importación** y se ejecuta en una única transacción. Los códigos ya existentes impiden la carga; no se actualizan registros existentes.
+
+Se ignoran las fórmulas del libro y se recalculan las puntuaciones a partir de sus valores. Un residual vacío permanece pendiente, no equivale a cero. Se conserva la fecha de evaluación original de la hoja de riesgos separada de la fecha de carga; el usuario autenticado queda registrado como importador. Las referencias normativas y estados del archivo se importan como datos proporcionados, no como cumplimiento ni implementación verificada. Revisa los avisos y conserva un respaldo antes de confirmar. La detección de duplicados por nombre es orientativa y puede no encontrar todas las coincidencias.
+
+El dashboard usa la última evaluación registrada por riesgo, sin limitarse a la primera página. Los escenarios sin evaluación y los residuales pendientes se muestran por separado. La criticidad de activos 4–5 se muestra como propuesta inicial, pendiente de definir los criterios institucionales.

@@ -75,6 +75,8 @@ def test_asset_workflow():
             risk = await client.post('/api/v1/risks', json=scenario, headers=headers)
             assert risk.status_code == 201
             risk_id = risk.json()['id']
+            assert (await client.put(f"/api/v1/threats/{threat.json()['id']}", json={'name':'Otra amenaza','description':'','category':'','active':True}, headers=headers)).status_code == 409
+            assert (await client.put(f"/api/v1/threats/{threat.json()['id']}", json={'name':'Malware','description':'Actualizado','category':'','active':True}, headers=headers)).status_code == 200
             evaluation = {'inherent_likelihood':5, 'inherent_impact':4, 'residual_likelihood':2, 'residual_impact':3, 'existing_controls':'Actualizaciones', 'effectiveness':'Parcial', 'justification':'Análisis documentado'}
             response = await client.post(f'/api/v1/risks/{risk_id}/assessments', json=evaluation, headers=headers)
             assert response.status_code == 201
@@ -83,6 +85,9 @@ def test_asset_workflow():
             evaluation['residual_likelihood'] = 1
             assert (await client.post(f'/api/v1/risks/{risk_id}/assessments', json=evaluation, headers=headers)).status_code == 201
             assert len((await client.get(f'/api/v1/risks/{risk_id}/assessments', headers=headers)).json()) == 2
+            assert (await client.put(f'/api/v1/risks/{risk_id}', json=scenario | {'event':'Cambiar escenario histórico'}, headers=headers)).status_code == 409
+            assert (await client.put(f'/api/v1/risks/{risk_id}', json=scenario | {'owner':'Responsable actualizado'}, headers=headers)).status_code == 200
+
             matrix = await client.get('/api/v1/risk-matrix', params={'unit_id':unit.json()['id']}, headers=headers)
             assert matrix.status_code == 200 and len(matrix.json()) == 1
             assert matrix.json()[0]['residual_likelihood'] == 1
@@ -158,6 +163,19 @@ def test_asset_workflow():
             assert (await client.post(f'/api/v1/assets/{asset_id}/retire', headers=headers)).json()['status'] == 'retirado'
             assert (await client.put(f'/api/v1/assets/{asset_id}/status', json={'status':'activo'}, headers=headers)).status_code == 409
             assert (await client.post(f'/api/v1/assets/{asset_id}/assessments', json=values | {'availability':3}, headers=headers)).status_code == 409
+            pending_risk = await client.post('/api/v1/risks', json=scenario | {'asset_id':second_id, 'code':'R-PENDING'}, headers=headers)
+            assert pending_risk.status_code == 201
+            pending_id = pending_risk.json()['id']
+            pending_values = evaluation | {'residual_likelihood':None, 'residual_impact':None, 'source_assessed_date':'2026-11-11'}
+            incomplete = await client.post(f'/api/v1/risks/{pending_id}/assessments', json=pending_values | {'residual_impact':2}, headers=headers)
+            assert incomplete.status_code == 422
+            pending = await client.post(f'/api/v1/risks/{pending_id}/assessments', json=pending_values, headers=headers)
+            assert pending.status_code == 201 and pending.json()['residual_score'] is None and pending.json()['source_assessed_date'] == '2026-11-11'
+            overview = await client.get('/api/v1/dashboard', headers=headers)
+            assert overview.status_code == 200 and overview.json()['risks_total'] == 2 and overview.json()['residual_pending'] == 1
+            assert (await client.get('/api/v1/reports/risks.csv', headers=headers)).status_code == 200
+            assert (await client.get('/api/v1/dashboard', headers={'Authorization':'Bearer '+manager_token})).status_code == 401
+
     try:
         asyncio.run(exercise())
     finally:

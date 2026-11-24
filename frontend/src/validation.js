@@ -4,6 +4,7 @@ export const assetSchema = z.object({
   name:z.string().trim().min(1,'Ingresa un nombre').max(200),
   description:z.string().max(10000),
   unit_id:z.string(),
+  macroprocess:z.string().max(200).optional(), subprocess:z.string().max(200).optional(), administrator:z.string().max(200).optional(), authorized_users:z.string().max(5000).optional(), supplier:z.string().max(200).optional(), criticality_justification:z.string().max(5000).optional(), evidence:z.string().max(5000).optional(), evidence_status:z.string().max(100).optional(), source_reference:z.string().max(5000).optional(), normative_reference:z.string().max(5000).optional(),
   asset_type:z.string().max(100).optional(),
   category:z.string().max(150).optional(),
   subcategory:z.string().max(150).optional(),

@@ -25,6 +25,11 @@ class ControlInput(BaseModel):
     owner: str = Field(default="", max_length=200)
     evidence: str = Field(default="", max_length=5000)
     review_date: date | None = None
+    implementation_date: date | None = None
+    verification_date: date | None = None
+    verified_effectiveness: str | None = Field(default=None, max_length=100)
+    verification_result: str | None = Field(default=None, max_length=5000)
+    observations: str | None = Field(default=None, max_length=5000)
 
 class ControlRead(ControlInput):
     model_config = ConfigDict(from_attributes=True)

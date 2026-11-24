@@ -17,10 +17,18 @@ def test_upgrade_preserves_existing_assets(tmp_path):
     migrate('0007')
     with sqlite3.connect(database) as db:
         db.execute("UPDATE assets SET category = 'Software previo' WHERE code = 'LEG-1'")
+    migrate('0008')
+    with sqlite3.connect(database) as db:
+        db.execute("INSERT INTO users (id,username,password_hash,role,active) VALUES (1,'migracion','hash','administrador',1)")
+        db.execute("INSERT INTO threats (id,name,description,category,active) VALUES (1,'amenaza','','',1)")
+        db.execute("INSERT INTO vulnerabilities (id,name,description,category,active) VALUES (1,'vulnerabilidad','','',1)")
+        db.execute("INSERT INTO risk_scenarios (id,asset_id,threat_id,vulnerability_id,event,causes,consequences,owner,identified_at) VALUES (1,1,1,1,'evento','causa','consecuencia','dueño','2025-01-01')")
+        db.execute("INSERT INTO risk_assessments (risk_id,inherent_likelihood,inherent_impact,residual_likelihood,residual_impact,existing_controls,effectiveness,justification,methodology,assessor_id,assessed_at) VALUES (1,3,4,2,3,'control','eficacia','justificación','v1',1,'2025-01-01')")
     migrate('head')
     with sqlite3.connect(database) as db:
         row=db.execute('SELECT code, name, description, updated_at, category FROM assets').fetchone()
         assert row[:3] == ('LEG-1', 'Existente', 'Datos previos')
         assert row[3].startswith('2025-01-01') and row[4] == 'Software previo'
-        assert db.execute('SELECT version_num FROM alembic_version').fetchone() == ('0008',)
+        assert db.execute('SELECT version_num FROM alembic_version').fetchone() == ('0009',)
         assert db.execute('SELECT name, active FROM asset_categories').fetchall() == [('Software previo', 1)]
+        assert db.execute('SELECT inherent_likelihood, inherent_impact, residual_likelihood, residual_impact, source_assessed_date FROM risk_assessments').fetchone() == (3,4,2,3,None)

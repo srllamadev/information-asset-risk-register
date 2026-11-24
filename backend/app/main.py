@@ -9,7 +9,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -35,6 +35,16 @@ class AssetCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=10000)
     unit_id: int | None = None
+    macroprocess: str | None = Field(default=None, max_length=200)
+    subprocess: str | None = Field(default=None, max_length=200)
+    administrator: str | None = Field(default=None, max_length=200)
+    authorized_users: str | None = Field(default=None, max_length=5000)
+    supplier: str | None = Field(default=None, max_length=200)
+    criticality_justification: str | None = Field(default=None, max_length=5000)
+    evidence: str | None = Field(default=None, max_length=5000)
+    evidence_status: str | None = Field(default=None, max_length=100)
+    source_reference: str | None = Field(default=None, max_length=5000)
+    normative_reference: str | None = Field(default=None, max_length=5000)
     asset_type: str | None = Field(default=None, max_length=100)
     category: str | None = Field(default=None, max_length=150)
     subcategory: str | None = Field(default=None, max_length=150)
@@ -282,12 +292,20 @@ class CatalogCreate(BaseModel):
     description: str = Field(default="", max_length=5000)
     category: str = Field(default="", max_length=100)
 
+class CatalogUpdate(CatalogCreate):
+    active: bool
+
 class CatalogRead(CatalogCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     active: bool
 
 class RiskCreate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=80)
+    affected_process: str | None = Field(default=None, max_length=200)
+    evidence_status: str | None = Field(default=None, max_length=100)
+    evidence_reference: str | None = Field(default=None, max_length=5000)
+    proposed_treatment: str | None = Field(default=None, max_length=5000)
     asset_id: int
     threat_id: int
     vulnerability_id: int
@@ -302,13 +320,20 @@ class RiskRead(RiskCreate, UTCResponse):
     identified_at: datetime
 
 class RiskAssessmentCreate(BaseModel):
+    source_assessed_date: date | None = None
     inherent_likelihood: int = Field(ge=1, le=5)
     inherent_impact: int = Field(ge=1, le=5)
-    residual_likelihood: int = Field(ge=1, le=5)
-    residual_impact: int = Field(ge=1, le=5)
+    residual_likelihood: int | None = Field(default=None, ge=1, le=5)
+    residual_impact: int | None = Field(default=None, ge=1, le=5)
     existing_controls: str = Field(min_length=1, max_length=5000, pattern=r".*\S.*")
     effectiveness: str = Field(min_length=1, max_length=5000, pattern=r".*\S.*")
     justification: str = Field(min_length=1, max_length=5000, pattern=r".*\S.*")
+
+    @model_validator(mode="after")
+    def residual_pair(self):
+        if (self.residual_likelihood is None) != (self.residual_impact is None):
+            raise ValueError("La probabilidad e impacto residual deben estar ambos completos o pendientes")
+        return self
 
 class RiskAssessmentRead(RiskAssessmentCreate, UTCResponse):
     id: int
@@ -318,8 +343,8 @@ class RiskAssessmentRead(RiskAssessmentCreate, UTCResponse):
     methodology: str
     inherent_score: int
     inherent_level: str
-    residual_score: int
-    residual_level: str
+    residual_score: int | None
+    residual_level: str | None
 
 METHODOLOGY_V1 = 'v1: probabilidad × impacto; 1-4 bajo, 5-9 medio, 10-16 alto, 17-25 crítico'
 
@@ -334,8 +359,8 @@ def risk_level(score: int) -> str:
 
 def risk_assessment_read(item: RiskAssessment):
     inherent = item.inherent_likelihood * item.inherent_impact
-    residual = item.residual_likelihood * item.residual_impact
-    return RiskAssessmentRead(**{key: getattr(item, key) for key in RiskAssessmentCreate.model_fields}, id=item.id, risk_id=item.risk_id, assessor_id=item.assessor_id, assessed_at=item.assessed_at, methodology=item.methodology, inherent_score=inherent, inherent_level=risk_level(inherent), residual_score=residual, residual_level=risk_level(residual))
+    residual = item.residual_likelihood * item.residual_impact if item.residual_likelihood is not None and item.residual_impact is not None else None
+    return RiskAssessmentRead(**{key: getattr(item, key) for key in RiskAssessmentCreate.model_fields}, id=item.id, risk_id=item.risk_id, assessor_id=item.assessor_id, assessed_at=item.assessed_at, methodology=item.methodology, inherent_score=inherent, inherent_level=risk_level(inherent), residual_score=residual, residual_level=risk_level(residual) if residual is not None else None)
 
 def install_catalog_routes(path: str, model):
     def list_catalog(user: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -353,6 +378,24 @@ def install_catalog_routes(path: str, model):
             db.rollback()
             raise HTTPException(409, "El nombre ya existe")
         return item
+    def update_catalog(item_id: int, data: CatalogUpdate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+        require_role(user, {"administrador", "gestor"})
+        item = db.get(model, item_id)
+        if not item:
+            raise HTTPException(404, "Elemento no encontrado")
+        reference = RiskScenario.threat_id if model is Threat else RiskScenario.vulnerability_id
+        if item.name != data.name and db.scalar(select(RiskScenario.id).where(reference == item.id).limit(1)):
+            raise HTTPException(409, "El elemento ya está vinculado a riesgos; crea otro para cambiar su nombre")
+        for key, value in data.model_dump().items():
+            setattr(item, key, value)
+        try:
+            db.add(AuditLog(user_id=user.id, action="modificar", entity=path, entity_id=str(item.id)))
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "El nombre ya existe")
+        return item
+    app.add_api_route(f"/api/v1/{path}/{{item_id}}", update_catalog, methods=["PUT"], response_model=CatalogRead, name=f"update_{path}")
     app.add_api_route(f"/api/v1/{path}", list_catalog, methods=["GET"], response_model=list[CatalogRead], name=f"list_{path}")
     app.add_api_route(f"/api/v1/{path}", create_catalog, methods=["POST"], response_model=CatalogRead, status_code=201, name=f"create_{path}")
 
@@ -371,9 +414,38 @@ def create_risk(data: RiskCreate, user: User = Depends(current_user), db: Sessio
         raise HTTPException(409, "Los elementos relacionados deben estar activos")
     item = RiskScenario(**data.model_dump())
     db.add(item)
-    db.flush()
-    db.add(AuditLog(user_id=user.id, action="crear", entity="riesgo", entity_id=str(item.id)))
-    db.commit()
+    try:
+        db.flush()
+        db.add(AuditLog(user_id=user.id, action="crear", entity="riesgo", entity_id=str(item.id)))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "El código de riesgo ya existe")
+    return item
+
+
+@app.put("/api/v1/risks/{risk_id}", response_model=RiskRead)
+def update_risk(risk_id: int, data: RiskCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    require_role(user, {"administrador", "gestor"})
+    item = db.get(RiskScenario, risk_id)
+    if not item:
+        raise HTTPException(404, "Riesgo no encontrado")
+    asset, threat, vulnerability = db.get(Asset, data.asset_id), db.get(Threat, data.threat_id), db.get(Vulnerability, data.vulnerability_id)
+    if not asset or not threat or not vulnerability:
+        raise HTTPException(422, "Activo, amenaza o vulnerabilidad inexistente")
+    if (asset.status == "retirado" and item.asset_id != asset.id) or (not threat.active and item.threat_id != threat.id) or (not vulnerability.active and item.vulnerability_id != vulnerability.id):
+        raise HTTPException(409, "Los elementos relacionados nuevos deben estar activos")
+    structural = ("asset_id", "threat_id", "vulnerability_id", "event", "causes", "consequences")
+    if any(getattr(item,k) != getattr(data,k) for k in structural) and db.scalar(select(RiskAssessment.id).where(RiskAssessment.risk_id == item.id).limit(1)):
+        raise HTTPException(409, "El escenario tiene evaluaciones históricas; crea uno nuevo para cambiar su identificación")
+    for key,value in data.model_dump().items():
+        setattr(item,key,value)
+    try:
+        db.add(AuditLog(user_id=user.id, action="modificar", entity="riesgo", entity_id=str(item.id)))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "El código de riesgo ya existe")
     return item
 
 @app.get("/api/v1/risks", response_model=list[RiskRead])
@@ -543,3 +615,9 @@ def update_asset_category(category_id: int, data: AssetCategoryInput, user: User
         db.rollback()
         raise HTTPException(409, 'La categoría ya existe')
     return item
+
+from .dashboard import router as dashboard_router
+app.include_router(dashboard_router)
+
+from .imports import router as imports_router
+app.include_router(imports_router)
